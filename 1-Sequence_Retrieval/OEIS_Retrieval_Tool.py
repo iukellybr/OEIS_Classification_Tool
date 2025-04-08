@@ -3,16 +3,25 @@ import os
 import cv2 # "pip install opencv-python"; this is a computer vision library
 import random
 import time 
+import numpy as np
 import pandas as pd
 import pytesseract # "pip install pytesseract"; reads words in images
+import concurrent.futures
+from threading import Lock
 from PIL import Image, ImageDraw, ImageFont
 
-# variables to control options
-include_pinplots = True
-update_index = True
-save_bfiles = True
+# Variables to control options
+include_pinplots = False
+update_index = False
+save_bfiles = False
 
-# time tracker
+# Sequence ID mode - sets how you want to retrieve sequences ("random", "fixed", "random+fixed", or "all" are the options)
+sequence_id_mode = 'random'
+
+# number of random sequences to generate
+num_random = 5000
+
+# Time tracker
 start_time = time.time()
 
 # Define save directories
@@ -23,9 +32,9 @@ pinplot_directory = os.path.join(save_directory, "Pinplots")
 index_directory = os.path.join(save_directory, "Sequence_Index.csv")
 bfile_directory = os.path.join(save_directory, "B-Files")
 
-# set tesseract directory
-# to utilize pytesseract you'll need to install it from https://github.com/UB-Mannheim/tesseract/wiki
-# recommended to save for entire computer with default location so it is available in C:\Program Files
+# Set tesseract directory
+# To utilize pytesseract you'll need to install it from https://github.com/UB-Mannheim/tesseract/wiki
+# Recommended to save for entire computer with default location so it is available in C:\Program Files
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # Ensure save directories exist
@@ -46,7 +55,7 @@ elif not os.path.exists(index_directory) and update_index:
                                      "Cross-References", "Keywords", "Author", "Scatterplot Type"])
 
 # Function to generate a specified number of random sequence IDs in the format "A######"
-def generate_random_sequence_ids(num_ids=20):
+def generate_random_sequence_ids(num_ids=100):
     return tuple(f"A{str(random.randint(1, 382000)).zfill(6)}" for _ in range(num_ids))
 
 # Function to fetch OEIS sequence metadata
@@ -75,17 +84,9 @@ def fetch_oeis_metadata(sequence_id):
 
 # Function to download B-file
 def download_oeis_sequence_bfile(sequence_id, save_dir):
-    # Ensure the sequence ID is in the format A000001, A000002, etc.
     base_url = "https://oeis.org"
     sequence_id_lower = sequence_id.lower()
     url = f"{base_url}/{sequence_id}/b{sequence_id_lower[1:]}.txt"
-    
-    # Extract the subdirectory name based on sequence ID (first 4 characters)
-    # sub_dir = os.path.join(save_dir, sequence_id[:4])
-    # os.makedirs(sub_dir, exist_ok=True)  # Ensure the subdirectory exists
-
-    # Define the full file path
-    # file_path = os.path.join(sub_dir, f"{sequence_id}.txt")
     file_path = os.path.join(save_dir, f"{sequence_id}.txt")
     
     try:
@@ -100,38 +101,46 @@ def download_oeis_sequence_bfile(sequence_id, save_dir):
     except Exception as err:
         print(f"An error occurred for {sequence_id}: {err}")
 
-# Generate random sequence IDs
-random_sequence_ids = generate_random_sequence_ids(num_ids=500)
-
 # Define a fixed sequence ID set - change as needed; will eventually need to be set of all sequences/large set of sequences
-# base_sequence_ids = ("A380713","A337014","A000045","A367562","A368400","A368427","A367726","A128272","A102920","A102837","A292834", "A057390") # Change this as needed - set to false if just want random sequences
-base_sequence_ids = False
+base_sequence_ids = ("A380713","A337014","A000045","A367562","A368400","A368427","A367726","A128272","A102920","A102837","A292834", "A057390") # Change this as needed
 
-if base_sequence_ids:
-    sequence_ids = base_sequence_ids + random_sequence_ids
+if sequence_id_mode == 'random+fixed':
+    sequence_ids = base_sequence_ids + generate_random_sequence_ids(num_ids=num_random)
+elif sequence_id_mode == 'fixed':
+    sequence_ids = base_sequence_ids
+elif sequence_id_mode == 'all':
+    # TODO
+    print("make an option for all sequence IDs")
 else:
-    sequence_ids = random_sequence_ids
+    sequence_ids = generate_random_sequence_ids(num_ids=num_random)
 
-for sequence_id in sequence_ids:
+metadata_dict = {}
+if update_index:
+    # Initialize a Lock to enable global handling of the metadata dictionary in the process_sequence function
+    # this global handling is used to classify each sequence as linear/logarithmic based on the scatterplot titles
+    index_df_lock = Lock()
+    for seq_id in sequence_ids:
+        # gather metadata for sequence IDs
+        metadata = fetch_oeis_metadata(seq_id)
+        if metadata:
+            metadata_dict[seq_id] = metadata
+
+def process_sequence(sequence_id):
     try:
         url = f"https://oeis.org/{sequence_id}/graph?png=1"
 
-        # Download the graph image
-        image_path = os.path.join(save_directory, f"{sequence_id}.png")
+        # Retrieve the graph image
         response = requests.get(url)
         if response.status_code == 200:
-            # Temporarily saves the default image from the site, which is a combined image that includes both graphs
-            with open(image_path, "wb") as file:
-                file.write(response.content)
+            image_array = np.asarray(bytearray(response.content), dtype=np.uint8)
         else:
             print(f"Failed to download the graph for sequence {sequence_id}. Response - {response.status_code}")
-            continue
+            return
 
         if save_bfiles:
             download_oeis_sequence_bfile(sequence_id, bfile_directory)
 
-        # Load the image back using cv2
-        image = cv2.imread(image_path)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
         height, width, _ = image.shape
 
         if height > 1000:
@@ -200,20 +209,19 @@ for sequence_id in sequence_ids:
             cv2.imwrite(graph_1_path, graph_1_cropped)
 
         if update_index:
-            # Retrieve metadata
-            metadata = fetch_oeis_metadata(sequence_id)
+            metadata = metadata_dict.get(sequence_id)
             if metadata:
                 metadata["Scatterplot Type"] = scatterplot_type
+                with index_df_lock:
+                    global index_df
+                    index_df = index_df.loc[index_df["Sequence ID"] != sequence_id]
+                    index_df = pd.concat([index_df, pd.DataFrame([metadata])], ignore_index=True)
 
-                # Update existing row or append new entry
-                index_df = index_df.loc[index_df["Sequence ID"] != sequence_id]
-                index_df = pd.concat([index_df, pd.DataFrame([metadata])], ignore_index=True)
-
-        # Delete the original downloaded image and title
-        os.remove(image_path)
     except:
         print(f'''Ingestion failed for sequence {sequence_id}.''')
-        continue
+
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    executor.map(process_sequence, sequence_ids)
 
 if update_index:
     index_df.to_csv(index_directory, index=False)
