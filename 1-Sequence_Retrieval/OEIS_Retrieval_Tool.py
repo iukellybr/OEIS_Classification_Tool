@@ -16,10 +16,13 @@ update_index = False
 save_bfiles = False
 
 # Sequence ID mode - sets how you want to retrieve sequences ("random", "fixed", "random+fixed", or "all" are the options)
-sequence_id_mode = 'random'
+sequence_id_mode = 'random+fixed'
 
 # number of random sequences to generate
-num_random = 5000
+num_random = 50
+
+# Define a fixed sequence ID set - change as needed; will eventually need to be set of all sequences/large set of sequences
+base_sequence_ids = ("A000002","A337014","A000003","A000004","A000005","A000006","A000007","A000010") # Change this as needed
 
 # Time tracker
 start_time = time.time()
@@ -101,16 +104,12 @@ def download_oeis_sequence_bfile(sequence_id, save_dir):
     except Exception as err:
         print(f"An error occurred for {sequence_id}: {err}")
 
-# Define a fixed sequence ID set - change as needed; will eventually need to be set of all sequences/large set of sequences
-base_sequence_ids = ("A380713","A337014","A000045","A367562","A368400","A368427","A367726","A128272","A102920","A102837","A292834", "A057390") # Change this as needed
-
 if sequence_id_mode == 'random+fixed':
     sequence_ids = base_sequence_ids + generate_random_sequence_ids(num_ids=num_random)
 elif sequence_id_mode == 'fixed':
     sequence_ids = base_sequence_ids
 elif sequence_id_mode == 'all':
-    # TODO
-    print("make an option for all sequence IDs")
+    sequence_ids = [f"A{str(i).zfill(6)}" for i in range(1, 382001)]
 else:
     sequence_ids = generate_random_sequence_ids(num_ids=num_random)
 
@@ -220,8 +219,23 @@ def process_sequence(sequence_id):
     except:
         print(f'''Ingestion failed for sequence {sequence_id}.''')
 
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    executor.map(process_sequence, sequence_ids)
+chunk_size = 10000
+total_chunks = (len(sequence_ids) + chunk_size - 1) // chunk_size  # ceiling division
+
+for i in range(0, len(sequence_ids), chunk_size):
+    chunk_start_time = time.time()
+    chunk = sequence_ids[i:i + chunk_size]
+    chunk_number = (i // chunk_size) + 1
+
+    print(f"\nStarting chunk {chunk_number} of {total_chunks} "
+          f"({len(chunk)} sequences)")
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(process_sequence, chunk)
+
+    chunk_elapsed = round(time.time() - chunk_start_time, 2)
+    print(f"\nFinished chunk {chunk_number} in {chunk_elapsed} seconds.")
+
 
 if update_index:
     index_df.to_csv(index_directory, index=False)
