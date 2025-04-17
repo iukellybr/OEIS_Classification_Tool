@@ -5,10 +5,13 @@ import random
 import time 
 import numpy as np
 import pandas as pd
-import pytesseract # "pip install pytesseract"; reads words in images
+import easyocr # reads words in images
 import concurrent.futures
 from threading import Lock
 from PIL import Image, ImageDraw, ImageFont
+
+# PURPOSE OF THIS SCRIPT - allow you to locally run sequence retrieval without using the Streamlit app
+# the Streamlit app implements the SequenceRetriever class
 
 # Variables to control options
 include_pinplots = False
@@ -38,7 +41,10 @@ bfile_directory = os.path.join(save_directory, "B-Files")
 # Set tesseract directory
 # To utilize pytesseract you'll need to install it from https://github.com/UB-Mannheim/tesseract/wiki
 # Recommended to save for entire computer with default location so it is available in C:\Program Files
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# initialize ocr_reader for reading scatterplot titles
+ocr_reader = easyocr.Reader(['en'])
 
 # Ensure save directories exist
 if not os.path.exists(save_directory):
@@ -163,7 +169,9 @@ def process_sequence(sequence_id):
         graph_2_title = graph_2[title_crop_top:-title_crop_bottom, title_crop_left:-title_crop_right]
 
         # Identify title to be logarithmic or not
-        extracted_title = pytesseract.image_to_string(graph_2_title, config="--psm 6")
+        # extracted_title = pytesseract.image_to_string(graph_2_title, config="--psm 6")
+        ocr_results = ocr_reader.readtext(graph_2_title)
+        extracted_title = " ".join([res[1] for res in ocr_results])
 
         # Logarithmic scatterplot graphs have 2 axes, which means there are slightly different cropping margins
         if "Logarithmic" in extracted_title:
