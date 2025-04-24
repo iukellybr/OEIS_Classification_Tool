@@ -19,7 +19,7 @@ update_index = False
 save_bfiles = False
 
 # Sequence ID mode - sets how you want to retrieve sequences ("random", "fixed", "random+fixed", or "all" are the options)
-sequence_id_mode = 'random+fixed'
+sequence_id_mode = 'all'
 
 # number of random sequences to generate
 num_random = 50

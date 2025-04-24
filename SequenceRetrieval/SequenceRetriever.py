@@ -18,6 +18,7 @@ class SequenceRetriever():
         self.include_pinplots = params.get('include_pinplots',False)
         self.update_index = params.get('update_index',False)
         self.save_bfiles = params.get('save_bfiles',False)
+        # TODO implement a "use existing directories" option
 
         # sequence ID mode - sets how you want to retrieve sequences ("random", "upto", "interval", or "range" are the options)
         # random - selects X random sequences
