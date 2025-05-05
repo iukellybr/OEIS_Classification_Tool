@@ -1,2 +1,28 @@
 # OEIS_Classification_Tool
-A tool created by students in the DSCI-D592 Data Science in Practice course at Indiana University to classify sequences in the Online Encyclopedia of Integer Sequences (OEIS) - oeis.org
+A tool created by students in the DSCI-D592 Data Science in Practice course at Indiana University to cluster sequences in the Online Encyclopedia of Integer Sequences (OEIS) - oeis.org - with the intention of identifying unique or interesting sequences based on their likeness to other sequences.
+
+The solution included in this GitHub repo contains a few main components, and multiple paths of experimentation were explored for each component. The components are listed and described below.
+
+# Sequence Retrieval
+In order to perform analysis on the OEIS database of sequences, it is necessary to first retrieve those sequences in an ingestible format for analysis. The first solution that our team explored in order to try to retrieve sequences is to make direct get requests to the OEIS website to retrieve .png images of each sequence's scatterplot; this code can be found in the LocalRetrieval script. It also enables retrieval of other sequence metadata such as B-Files or description. However, this did not scale because the OEIS website will throttle requests when a certain rate is exceeded, and the OEIS is better served not having requests thrown at it in this capacity.
+
+Instead, the proper way to retrieve OEIS sequence data at scale for our project's purposes begins via the OEIS "oeisdata" GitHub repository - https://github.com/oeis/oeisdata - using Git LFS (Large File Storage). The oeisdata repo's README provides instructions on how to pull down B-Files for sequences from the repository. Then, once those B-Files have been downloaded, scatterplots can be generated using the "SequenceImageGenerator.py" script. This script mimics the behavior of the OEIS website in generating scatterplots, conditionally with a logarithmic transformation, for each sequence. The resulting sequence images (sample of 200,000 sequence images provided in the "Sequence_Images" directory, split between linear and log scatterplots) are utilized as an input for algorithmic classification.
+
+# Algorithms
+With scatterplot representations of each sequence available, the "Algorithms" directory contains the next step of processing - the algorithmic clustering and outlier detection of sequences based on the scatterplot image representations of them. 
+
+Multiple approaches to classification are included in the repository, but there is a general structure to the scripts with components as follows:
+
+1. Preprocessing and image transformation - Every script utilizes image transformations to standardize the components and dimensions of the images that will be processed. Specifically, all images are resized to 224x224 for clustering, and have greyscaling applied. Additional preprocessing steps were explored in a shallow capacity, with the primary example being in the mobilenet_with_class_prefiltering and resnet_with_class_prefiltering scripts, which utilized manually-defined classes of scatterplots to attempt a "pre-clustering" exercise into some of the most popular types of scatterplots (e.g. straight lines - see "Prefiltering_Classes" folder), but this methodology requires further refinement before it is effective. Exploring other preprocessing steps is a major area of opportunity for improving the accuracy of both the clustering and outlier detection components of the existing algorithm scripts.
+
+2. Image detection model - The "cnn_binary_classifier" script trains its own model, but otherwise, we found that utilizing pre-trained image models (e.g. mobilenet, resnet, pix2struct) was a much quicker solution with little to no sacrifice in accuracy. However, there may be some pre-trained models which are more performant for the task at hand than others; this is also an area for further exploration.
+
+3. Clustering and outlier detection - With the selected model, each algorithm proceeds to cluster sequences, and identify outliers using an isolation forest for outlier detection. Multiple clustering methodologies may also be applicable, but HDBSCAN was found to be a particularly successful unsupervised clustering algorithm.
+
+Because there are multiple iterations and versions that utilize different options for these components, there is not necessarily one true "selected" algorithm, but moreso a framework to work within.
+
+# Insights
+The "Insights" step of our pipeline is intended to be the last step, with visualizations and any additional analysis to be performed on the outputs from the associated algorithms. For the time being, most of these visualizations and analysis steps are contained within the Algorithms scripts themselves, but the top outlier visualization can be generated from existing results of the "resnet_with_class_prefiltering" or "mobilenet_with_class_prefiltering" scripts' .csv results using the script that is included.
+
+# App Components
+Initially, with the "LocalRetrieval" process, the intention was to create an app which ran locally and provided a one-button solution featuring multiple options to customize a pipeline from start to finish by retrieving images, building a classification and outlier detection model, and visualizing results. However, this remains in an unfinished state, with multiple stubs, due to the finding that API-based image retrieval would not scale appropriately. It may be possible to programatically retrieve B-Files from the oeisdata GitHub repository, but the size of the B-Files would result in a rather sizeable corpus to store locally (200,000 B-Files occupies ~26 GB), compared to the initial intention to store 2-3 GB. There is a future opportunity to refactor the app into a cloud-based solution, eliminating the need for local storage or generation of sequence scatterplot images. 
